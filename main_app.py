@@ -2,152 +2,167 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import timedelta
 
 # Configuración de la página
-st.set_page_config(page_title="COVID-19 Dashboard Analítico", page_icon="🦠", layout="wide")
+st.set_page_config(page_title="Gestión de Riesgo Meteorológico - Medellín", page_icon="🌤️", layout="wide")
 
 # ==========================================
-# 1. SIMULACIÓN DE DATOS SINTÉTICOS
+# 1. PERSONALIZACIÓN DEL PANEL IZQUIERDO Y SEGURIDAD
+# ==========================================
+st.sidebar.markdown("### 🎓 EAFIT 2026")
+st.sidebar.markdown("**📚 Ciencia de Datos**")
+st.sidebar.markdown("**👤 Jeronimo Acosta**")
+st.sidebar.markdown("**📅 Julio de 2026**")
+st.sidebar.divider()
+
+# Clave de acceso
+st.sidebar.header("🔒 Autenticación")
+password = st.sidebar.text_input("Ingrese el código de acceso:", type="password")
+
+if password != "4650":
+    st.warning("⚠️ Acceso denegado. Por favor, introduzca el código de acceso en el panel lateral para operar el dashboard.")
+    st.stop()
+else:
+    st.sidebar.success("✅ Acceso concedido")
+
+# ==========================================
+# 2. SIMULACIÓN DE DATOS SINTÉTICOS (METEOROLOGÍA MEDELLÍN)
 # ==========================================
 @st.cache_data
-def generar_datos_sinteticos(n_registros=10000):
-    """
-    Genera 10,000 registros con 8 columnas de diferentes tipos de datos.
-    Se usa caché para evitar regenerar los datos con cada interacción en la UI.
-    """
-    np.random.seed(42)  # Para reproducibilidad
+def generar_datos_meteorologicos(n_registros=500):
+    np.random.seed(42)
     
-    # Rango de fechas (últimos 365 días)
-    fecha_inicio = pd.to_datetime('2023-01-01')
-    fechas = [fecha_inicio + timedelta(days=np.random.randint(0, 365)) for _ in range(n_registros)]
+    # 1. Serie de tiempo (Frecuencia diaria)
+    fechas = pd.date_range(start='2026-01-01', periods=n_registros, freq='D')
     
-    # Construcción del DataFrame
+    comunas = ['Popular', 'Santa Cruz', 'Manrique', 'Aranjuez', 'Castilla', 
+               'Doce de Octubre', 'Robledo', 'Villa Hermosa', 'Buenos Aires', 
+               'La Candelaria', 'Laureles-Estadio', 'La América', 'San Javier', 
+               'El Poblado', 'Guayabal', 'Belén']
+    
     df = pd.DataFrame({
-        'ID_Paciente': np.arange(1, n_registros + 1),                      # Entero (Identificador)
-        'Fecha_Reporte': fechas,                                           # Fecha
-        'Edad': np.random.randint(1, 95, n_registros),                     # Entero (Cuantitativa discreta)
-        'Genero': np.random.choice(['Masculino', 'Femenino'], n_registros),# Categórica nominal
-        'Region': np.random.choice(['Norte', 'Sur', 'Centro', 'Este', 'Oeste'], n_registros), # Categórica
-        'Estado': np.random.choice(['Recuperado', 'Activo', 'Fallecido'], n_registros, p=[0.75, 0.20, 0.05]), 
-        'Severidad': np.random.choice(['Leve', 'Moderada', 'Grave'], n_registros, p=[0.6, 0.3, 0.1]), # Ordinal
-        'Carga_Viral': np.round(np.random.uniform(10.5, 999.9, n_registros), 2) # Float (Cuantitativa continua)
+        'Fecha': fechas,                                                                # 1. Fecha (Serie de tiempo)
+        'Comuna': np.random.choice(comunas, n_registros),                               # 2. Comuna (Categórica)
+        'Temperatura_C': np.round(np.random.normal(23, 4, n_registros), 1),             # 3. Temperatura
+        'Humedad_Pct': np.round(np.random.uniform(40, 100, n_registros), 1),            # 4. Humedad
+        'Velocidad_Viento_kmh': np.round(np.random.exponential(12, n_registros), 1),    # 5. Viento
+        'Precipitacion_mm': np.round(np.random.exponential(15, n_registros), 1),        # 6. Lluvia
+        'Poblacion_Afectable': np.random.randint(5000, 150000, n_registros),            # 7. Población en riesgo
+        'Indice_Calidad_Aire': np.random.randint(20, 180, n_registros)                  # 8. ICA
     })
+    
+    # 9. Nivel de Riesgo (Categórica Ordinal)
+    def calcular_riesgo(row):
+        if row['Precipitacion_mm'] > 50 or row['Velocidad_Viento_kmh'] > 40: return 'Crítico'
+        elif row['Precipitacion_mm'] > 30 or row['Indice_Calidad_Aire'] > 120: return 'Alto'
+        elif row['Precipitacion_mm'] > 10: return 'Medio'
+        return 'Bajo'
+        
+    df['Nivel_Riesgo'] = df.apply(calcular_riesgo, axis=1)
+    
+    # 10. Alerta Deslizamiento (Booleana/Categórica)
+    condicion_deslizamiento = (df['Precipitacion_mm'] > 40) & (df['Humedad_Pct'] > 85)
+    df['Alerta_Deslizamiento'] = np.where(condicion_deslizamiento, 'Sí', 'No')
     
     return df
 
-df = generar_datos_sinteticos()
+df = generar_datos_meteorologicos()
 
 # ==========================================
-# INTERFAZ Y BARRA LATERAL (CONTROLES)
+# INTERFAZ Y FILTROS LATERALES
 # ==========================================
-st.title("🦠 Dashboard Analítico: Simulación COVID-19")
-st.markdown("Plataforma interactiva para el análisis descriptivo y exploratorio de datos epidemiológicos.")
+st.title("🌦️ Dashboard de Riesgo Meteorológico - Medellín")
+st.markdown("Herramienta de análisis de condiciones climáticas y riesgos para la toma de decisiones de la Alcaldía.")
 
-st.sidebar.header("⚙️ Panel de Control")
+st.sidebar.header("⚙️ Filtros de Análisis")
+comuna_sel = st.sidebar.multiselect("Filtrar por Comuna:", options=df['Comuna'].unique(), default=df['Comuna'].unique()[:5])
+riesgo_sel = st.sidebar.multiselect("Nivel de Riesgo:", options=df['Nivel_Riesgo'].unique(), default=df['Nivel_Riesgo'].unique())
 
-# Filtros Globales
-region_sel = st.sidebar.multiselect("Filtrar por Región:", options=df['Region'].unique(), default=df['Region'].unique())
-estado_sel = st.sidebar.multiselect("Filtrar por Estado:", options=df['Estado'].unique(), default=df['Estado'].unique())
-
-# Filtrar el dataframe según la selección
-df_filtrado = df[(df['Region'].isin(region_sel)) & (df['Estado'].isin(estado_sel))]
+df_filtrado = df[(df['Comuna'].isin(comuna_sel)) & (df['Nivel_Riesgo'].isin(riesgo_sel))]
 
 # ==========================================
-# 2. ESQUEMA DE MÉTRICAS (ESTADÍSTICA)
+# 3. ESQUEMA DE MÉTRICAS 
 # ==========================================
-st.markdown("### 📊 Indicadores Principales (KPIs)")
+st.markdown("### 📊 Panel de Alertas y Métricas")
 
 col1, col2, col3, col4 = st.columns(4)
 
-# Métricas Cuantitativas
-total_casos = len(df_filtrado)
-edad_promedio = df_filtrado['Edad'].mean()
-carga_viral_max = df_filtrado['Carga_Viral'].max()
-
-# Métricas Cualitativas (Modas/Frecuencias)
-if total_casos > 0:
-    region_afectada = df_filtrado['Region'].mode()[0]
-else:
-    region_afectada = "N/A"
+alertas_activas = len(df_filtrado[df_filtrado['Alerta_Deslizamiento'] == 'Sí'])
+precipitacion_max = df_filtrado['Precipitacion_mm'].max() if not df_filtrado.empty else 0
+temp_promedio = df_filtrado['Temperatura_C'].mean() if not df_filtrado.empty else 0
+pob_riesgo = df_filtrado[df_filtrado['Nivel_Riesgo'].isin(['Alto', 'Crítico'])]['Poblacion_Afectable'].sum()
 
 with col1:
-    st.metric(label="Total Casos Registrados", value=f"{total_casos:,}")
+    st.metric(label="Alertas de Deslizamiento (Sí)", value=alertas_activas)
 with col2:
-    st.metric(label="Edad Promedio", value=f"{edad_promedio:.1f} años")
+    st.metric(label="Precipitación Máxima", value=f"{precipitacion_max} mm")
 with col3:
-    st.metric(label="Región más afectada", value=str(region_afectada))
+    st.metric(label="Temperatura Promedio", value=f"{temp_promedio:.1f} °C")
 with col4:
-    st.metric(label="Pico Carga Viral", value=f"{carga_viral_max:.1f} copias/mL")
+    st.metric(label="Población en Alto Riesgo", value=f"{pob_riesgo:,}")
 
 st.divider()
 
 # ==========================================
-# 3. GRÁFICOS DINÁMICOS Y PERSONALIZABLES
+# 4. GRÁFICOS DINÁMICOS E INTERACCIÓN
 # ==========================================
+st.markdown("### 📈 Análisis Visual de Variables")
 
-st.markdown("### 📈 Análisis Exploratorio Visual")
-
-tab1, tab2, tab3 = st.tabs(["Tendencias Temporales", "Análisis Categórico (Umbrales)", "Distribución Cuantitativa"])
+tab1, tab2, tab3 = st.tabs(["Serie de Tiempo", "Análisis por Comuna y Umbrales", "Dispersión Multivariable"])
 
 with tab1:
-    st.subheader("Evolución de Casos en el Tiempo")
-    # Agrupar por fecha
-    df_tiempo = df_filtrado.groupby(df_filtrado['Fecha_Reporte'].dt.to_period('M')).size().reset_index(name='Casos')
-    df_tiempo['Fecha_Reporte'] = df_tiempo['Fecha_Reporte'].dt.to_timestamp()
+    st.subheader("Comportamiento Meteorológico en el Tiempo")
+    var_tiempo = st.selectbox("Seleccione la variable a visualizar en el tiempo:", 
+                              ['Precipitacion_mm', 'Temperatura_C', 'Indice_Calidad_Aire', 'Velocidad_Viento_kmh'])
     
-    fig_line = px.line(df_tiempo, x='Fecha_Reporte', y='Casos', markers=True, 
-                       title="Volumen de Casos por Mes", 
-                       line_shape='spline', color_discrete_sequence=['#FF4B4B'])
+    # Agrupar por fecha promedio en base a filtros
+    df_tiempo = df_filtrado.groupby('Fecha')[var_tiempo].mean().reset_index()
+    
+    fig_line = px.line(df_tiempo, x='Fecha', y=var_tiempo, 
+                       title=f"Evolución Diaria Promedio de {var_tiempo}",
+                       color_discrete_sequence=['#1E88E5'])
     st.plotly_chart(fig_line, use_container_width=True)
 
 with tab2:
-    st.subheader("Comparativa Categórica con Umbral Crítico")
-    
-    # Opciones de usuario para personalizar la gráfica
+    st.subheader("Comparativa por Comunas y Control de Umbrales")
     col_var, col_umbral = st.columns([1, 2])
+    
     with col_var:
-        variable_cat = st.selectbox("Selecciona Variable a analizar:", ['Region', 'Severidad', 'Genero', 'Estado'])
+        variable_bar = st.selectbox("Variable para agrupar por Comuna:", 
+                                    ['Precipitacion_mm', 'Poblacion_Afectable', 'Indice_Calidad_Aire'])
     
-    # Preparar datos de barras
-    df_bar = df_filtrado[variable_cat].value_counts().reset_index()
-    df_bar.columns = [variable_cat, 'Cantidad']
-    
+    # Promedio o Suma dependiendo de la variable
+    if variable_bar == 'Poblacion_Afectable':
+        df_bar = df_filtrado.groupby('Comuna')[variable_bar].sum().reset_index()
+    else:
+        df_bar = df_filtrado.groupby('Comuna')[variable_bar].mean().reset_index()
+        
     with col_umbral:
-        # Slider dinámico según la cantidad máxima de la variable elegida
-        max_val = int(df_bar['Cantidad'].max()) if not df_bar.empty else 100
-        umbral_alerta = st.slider("Define el Umbral de Alerta (Línea de referencia):", 
-                                  min_value=0, max_value=max_val + 500, value=int(max_val*0.8), step=100)
+        max_val = float(df_bar[variable_bar].max()) if not df_bar.empty else 100.0
+        umbral_riesgo = st.slider(f"Definir Umbral Crítico para {variable_bar}:", 
+                                  min_value=0.0, max_value=max_val * 1.2, value=max_val * 0.7, step=max_val/20)
 
-    # Construir gráfica de barras
-    fig_bar = px.bar(df_bar, x=variable_cat, y='Cantidad', text_auto=True,
-                     title=f"Distribución por {variable_cat}",
-                     color='Cantidad', color_continuous_scale='Blues')
+    fig_bar = px.bar(df_bar, x='Comuna', y=variable_bar, text_auto='.2f',
+                     title=f"{variable_bar} por Comuna",
+                     color=variable_bar, color_continuous_scale='Reds')
     
-    # Añadir línea de umbral dinámico (Interacción solicitada)
-    fig_bar.add_hline(y=umbral_alerta, line_dash="dot", 
-                      annotation_text=f"Umbral: {umbral_alerta}", 
-                      annotation_position="top right", line_color="red")
+    fig_bar.add_hline(y=umbral_riesgo, line_dash="dash", line_color="black",
+                      annotation_text=f"Umbral: {umbral_riesgo:.1f}", annotation_position="top left")
     
-    fig_bar.update_layout(xaxis_title=variable_cat, yaxis_title="Cantidad de Pacientes")
     st.plotly_chart(fig_bar, use_container_width=True)
 
 with tab3:
-    st.subheader("Dispersión: Edad vs Carga Viral")
+    st.subheader("Relación entre Variables y Riesgo")
+    var_x = st.selectbox("Variable Eje X:", ['Temperatura_C', 'Velocidad_Viento_kmh'], index=0)
+    var_y = st.selectbox("Variable Eje Y:", ['Humedad_Pct', 'Precipitacion_mm'], index=1)
     
-    # Para no saturar el navegador con 10,000 puntos, tomamos una muestra si es muy grande
-    muestra_dispersion = df_filtrado.sample(n=min(1000, len(df_filtrado)), random_state=1)
-    
-    color_disp = st.radio("Colorear puntos por:", ['Severidad', 'Estado', 'Genero'], horizontal=True)
-    
-    fig_scatter = px.scatter(muestra_dispersion, x='Edad', y='Carga_Viral', color=color_disp,
-                             opacity=0.7, title=f"Relación Carga Viral vs Edad (Muestra representativa) - Agrupado por {color_disp}",
-                             size_max=10, hover_data=['ID_Paciente'])
+    fig_scatter = px.scatter(df_filtrado, x=var_x, y=var_y, color='Nivel_Riesgo', 
+                             size='Poblacion_Afectable', hover_data=['Comuna', 'Fecha'],
+                             title=f"Dispersión: {var_x} vs {var_y} (Tamaño = Población)",
+                             color_discrete_map={'Bajo': 'green', 'Medio': 'yellow', 'Alto': 'orange', 'Crítico': 'red'})
     
     st.plotly_chart(fig_scatter, use_container_width=True)
 
-# Sección de datos crudos (opcional para el usuario)
-with st.expander("Ver Base de Datos Simulada"):
-    st.dataframe(df_filtrado.head(100), use_container_width=True)
-    st.caption("Mostrando los primeros 100 registros aplicados a los filtros actuales.")
+with st.expander("Ver Datos Crudos Simulados (Medellín)"):
+    st.dataframe(df_filtrado.head(150), use_container_width=True)
